@@ -15,7 +15,8 @@ from streamlit_folium import st_folium
 from prophet import Prophet
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error
-import subprocess
+import gdown
+import os
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -30,7 +31,7 @@ st.set_page_config(
 )
 
 # ======================================
-# FIX 2: GLOBAL CSS — visible metrics in dark mode
+# GLOBAL CSS
 # ======================================
 st.markdown("""
 <style>
@@ -59,9 +60,7 @@ st.markdown("""
         border-left: 4px solid #e74c3c;
         margin-bottom: 10px;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 6px 6px 0 0;
         padding: 8px 16px;
@@ -70,20 +69,37 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ======================================
-# FILE PATHS
+# GOOGLE DRIVE FILE IDs
 # ======================================
-BASE = r"D:\JAVA\projects\project 4(IITB)"
+DRIVE_FILES = {
+    "final_owid_output.csv":       "12EDDaOpZXrtbgQnj2ICkeDoiKxgmEBQs",
+    "cleaned_covid_data.csv":      "1vUnB0hZJB1lg5lb_7BKifmiI4HEcgFif",
+    "final_location_data.csv":     "1SnKD5y_nhs_5YqV-kQeWLRHwbp7qbdjj",
+    "final_testing_data.csv":      "1uVod4Fua-vJg1rQRsTvUlSEbBGtfsHkC",
+    "final_vactination_data.csv":  "1SMU_kshL9R_Dd6_aRRiyqohlknsIOzlx",
+    "final_predictions.csv":       "11Voxbw_anwCsaeMJ_gM62hvEDy4EVVPh",
+    "final_risk.csv":              "1OAZp5xQgR7RtMMJyfKtobf1ETrgSMmy0",
+    "global_risk_map_data.csv":    "1MRMHlpRtNWjleuQgF941k_lquj4MIc_S",
+    "merged_latest.csv":           "1JEbTNM-3v_cb7opAiGNWt38DpY0Er8BC",
+}
+
+def download_if_needed(filename):
+    """Download file from Google Drive if not already present."""
+    if not os.path.exists(filename):
+        file_id = DRIVE_FILES[filename]
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, filename, quiet=False)
 
 # ======================================
 # LOAD DATA (cached)
 # ======================================
 @st.cache_data
 def load_owid():
+    download_if_needed("final_owid_output.csv")
     try:
-        df = pd.read_excel(fr"{BASE}\final_owid_output.csv", engine='openpyxl')
+        df = pd.read_csv("final_owid_output.csv", encoding='latin1', on_bad_lines='skip')
     except Exception:
-        df = pd.read_csv(fr"{BASE}\final_owid_output.csv",
-                         encoding='latin1', on_bad_lines='skip')
+        df = pd.read_csv("final_owid_output.csv", encoding='utf-8', on_bad_lines='skip')
     df.columns        = df.columns.str.strip().str.lower()
     df['date']        = pd.to_datetime(df['date'], errors='coerce')
     df['cases']       = pd.to_numeric(df['cases'],       errors='coerce').fillna(0)
@@ -100,9 +116,9 @@ def load_owid():
     df['moving_avg_14'] = (df.groupby('country')['cases']
                              .rolling(14, min_periods=1).mean()
                              .reset_index(0, drop=True))
-    df['growth_rate']   = df['daily_cases'] / (df['cases'] + 1)
-    df['cases_per_100k']= (df['cases'] / df['population'].clip(lower=1)) * 100000
-    df['death_rate']    = (df['deaths'] / (df['cases'] + 1)) * 100
+    df['growth_rate']    = df['daily_cases'] / (df['cases'] + 1)
+    df['cases_per_100k'] = (df['cases'] / df['population'].clip(lower=1)) * 100000
+    df['death_rate']     = (df['deaths'] / (df['cases'] + 1)) * 100
     df = df.drop(columns=['cases_filled'], errors='ignore').fillna(0)
     EXCLUDE = ['European Union', 'High-income', 'Upper-middle', 'Low-income',
                'Lower-middle', 'World', 'income', 'International']
@@ -112,19 +128,24 @@ def load_owid():
 @st.cache_data
 def load_risk():
     try:
-        return pd.read_csv(fr"{BASE}\global_risk_map_data.csv")
+        download_if_needed("global_risk_map_data.csv")
+        return pd.read_csv("global_risk_map_data.csv")
     except Exception:
         return pd.DataFrame()
 
 @st.cache_data
 def load_predictions():
     try:
-        df = pd.read_csv(fr"{BASE}\final_predictions.csv")
+        download_if_needed("final_predictions.csv")
+        df = pd.read_csv("final_predictions.csv")
         df['ds'] = pd.to_datetime(df['ds'])
         return df
     except Exception:
         return pd.DataFrame()
 
+# ======================================
+# COORDINATES
+# ======================================
 COORDS = {
     'Afghanistan':(33.93,67.71),'Albania':(41.15,20.17),'Algeria':(28.03,1.66),
     'Argentina':(-38.42,-63.62),'Australia':(-25.27,133.78),'Austria':(47.52,14.55),
@@ -156,7 +177,7 @@ COORDS = {
 # ======================================
 # LOAD DATA
 # ======================================
-with st.spinner("Loading data..."):
+with st.spinner("Loading data from Google Drive (first run may take a moment)..."):
     df      = load_owid()
     risk_df = load_risk()
     pred_df = load_predictions()
@@ -167,7 +188,6 @@ countries = sorted(df['country'].unique().tolist())
 # SIDEBAR
 # ======================================
 with st.sidebar:
-    # FIX 1: text logo instead of broken image
     st.markdown("""
     <div style='text-align:center;padding:10px 0'>
         <span style='font-size:42px'>🦠</span><br>
@@ -219,27 +239,14 @@ with st.sidebar:
     show_low     = st.checkbox("Low risk markers",   value=True)
 
     st.markdown("---")
-
-    # FIX 3: Action buttons in sidebar
     st.subheader("Actions")
     if st.button("🔄  Refresh Data", use_container_width=True):
+        # Delete cached files so they re-download
+        for fname in DRIVE_FILES:
+            if os.path.exists(fname):
+                os.remove(fname)
         st.cache_data.clear()
         st.rerun()
-
-    if st.button("📊  Run Full Analysis", use_container_width=True):
-        try:
-            subprocess.Popen(
-                ["python", fr"{BASE}\prediction.py"],
-                creationflags=subprocess.CREATE_NEW_CONSOLE
-            )
-            st.success("Analysis started in a new window!")
-        except Exception as e:
-            st.error(f"Could not start: {e}")
-
-    if st.button("🗺️  Open Risk Map", use_container_width=True):
-        import webbrowser
-        webbrowser.open(fr"{BASE}\ml_risk_map.html")
-        st.success("Map opened in browser!")
 
     st.markdown("---")
     st.caption("Data: OWID · JHU · WHO · 2020–2024")
@@ -302,9 +309,9 @@ with tab1:
 
     with col_r:
         st.subheader("Cases Distribution")
-        top15    = latest.nlargest(15, 'cases')
-        fig_pie  = px.pie(top15, values='cases', names='country', hole=0.4,
-                          color_discrete_sequence=px.colors.qualitative.Set3)
+        top15   = latest.nlargest(15, 'cases')
+        fig_pie = px.pie(top15, values='cases', names='country', hole=0.4,
+                         color_discrete_sequence=px.colors.qualitative.Set3)
         fig_pie.update_layout(margin=dict(t=0,b=0,l=0,r=0), height=320,
                               paper_bgcolor='rgba(0,0,0,0)',
                               plot_bgcolor='rgba(0,0,0,0)')
@@ -411,8 +418,8 @@ with tab3:
                 mae = mean_absolute_error(merged_eval['y'], merged_eval['yhat'])
 
                 c1, c2, c3 = st.columns(3)
-                with c1: st.metric("Model MAE",         f"{mae:,.0f} cases")
-                with c2: st.metric("Last Known Cases",  f"{int(model_df['y'].iloc[-1]):,}")
+                with c1: st.metric("Model MAE",        f"{mae:,.0f} cases")
+                with c2: st.metric("Last Known Cases", f"{int(model_df['y'].iloc[-1]):,}")
                 with c3: st.metric(f"Predicted in {forecast_days}d",
                                    f"{int(forecast['yhat'].iloc[-1]):,}")
 
@@ -483,7 +490,6 @@ with tab3:
 with tab4:
     st.subheader("Interactive Risk Map")
 
-    # FIX 4: prevent brightness change when map loads
     st.markdown("""
     <style>
         iframe[title="streamlit_folium.st_folium"] {
@@ -532,7 +538,7 @@ with tab4:
 
             for _, row in plot_df.iterrows():
                 try:
-                    risk  = row.get('risk','Low')
+                    risk = row.get('risk','Low')
                     if risk == 'High'   and not show_high:   continue
                     if risk == 'Medium' and not show_medium: continue
                     if risk == 'Low'    and not show_low:    continue
