@@ -1,12 +1,8 @@
 # ============================================================
 #   COVID-19 EPIDEMIC SPREAD PREDICTION — TRACK C
 #   CodeCure AI Hackathon
-#   Files: OWID + JHU + Vaccination + Testing + Location
 # ============================================================
 
-# ======================================
-# STEP 1: IMPORTS
-# ======================================
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -20,7 +16,8 @@ from sklearn.ensemble import RandomForestRegressor
 import matplotlib
 matplotlib.use('Agg')
 import plotly.io as pio
-import gdown
+import requests
+import re
 import os
 import warnings
 warnings.filterwarnings('ignore')
@@ -28,7 +25,7 @@ warnings.filterwarnings('ignore')
 pio.renderers.default = 'browser'
 
 # ======================================
-# STEP 2: GOOGLE DRIVE FILE IDs
+# GOOGLE DRIVE FILE IDs
 # ======================================
 DRIVE_FILES = {
     "final_owid_output.csv":      "12EDDaOpZXrtbgQnj2ICkeDoiKxgmEBQs",
@@ -39,12 +36,35 @@ DRIVE_FILES = {
 }
 
 def download_if_needed(filename):
-    """Download file from Google Drive if not already present."""
+    """Download file from Google Drive, handling large-file confirmation."""
     if not os.path.exists(filename):
         file_id = DRIVE_FILES[filename]
-        url = f"https://drive.google.com/uc?id={file_id}"
-        print(f"    Downloading {filename} from Google Drive...")
-        gdown.download(url, filename, quiet=False)
+        session = requests.Session()
+
+        url = f"https://drive.google.com/uc?id={file_id}&export=download"
+        response = session.get(url, stream=True)
+
+        token = None
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                token = value
+                break
+
+        if token is None:
+            content_start = response.content[:4096].decode('utf-8', errors='ignore')
+            match = re.search(r'confirm=([0-9A-Za-z_]+)', content_start)
+            if match:
+                token = match.group(1)
+
+        if token:
+            url = f"https://drive.google.com/uc?id={file_id}&export=download&confirm={token}"
+            response = session.get(url, stream=True)
+
+        with open(filename, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=32768):
+                if chunk:
+                    f.write(chunk)
+        print(f"    Downloaded: {filename}")
 
 print("=" * 60)
 print("  COVID-19 EPIDEMIC SPREAD PREDICTION — TRACK C")
@@ -56,9 +76,12 @@ print("=" * 60)
 print("\n[1/5] Loading OWID dataset...")
 download_if_needed("final_owid_output.csv")
 try:
-    df = pd.read_csv("final_owid_output.csv", encoding='latin1', on_bad_lines='skip')
+    df = pd.read_csv("final_owid_output.csv", encoding='utf-8-sig', on_bad_lines='skip')
 except Exception:
-    df = pd.read_csv("final_owid_output.csv", encoding='utf-8', on_bad_lines='skip')
+    try:
+        df = pd.read_csv("final_owid_output.csv", encoding='latin1', on_bad_lines='skip')
+    except Exception:
+        df = pd.read_excel("final_owid_output.csv", engine='openpyxl')
 
 df.columns        = df.columns.str.strip().str.lower()
 df                = df.drop_duplicates()
@@ -79,14 +102,14 @@ df['day']         = (df['date'] - df['date'].min()).dt.days
 print(f"    Rows: {len(df):,}  |  Countries: {df['country'].nunique()}")
 
 # ======================================
-# STEP 4: LOAD JHU DATA (lat/lon coords)
+# STEP 4: LOAD JHU DATA
 # ======================================
 print("[2/5] Loading JHU dataset (coordinates)...")
 download_if_needed("cleaned_covid_data.csv")
 JHU_LOADED = False
 jhu_coords = pd.DataFrame(columns=['country', 'lat', 'lon'])
 try:
-    jhu = pd.read_csv("cleaned_covid_data.csv", encoding='latin1', on_bad_lines='skip')
+    jhu = pd.read_csv("cleaned_covid_data.csv", encoding='utf-8-sig', on_bad_lines='skip')
     jhu.columns = jhu.columns.str.strip().str.lower()
     if 'long' in jhu.columns:
         jhu.rename(columns={'long': 'lon'}, inplace=True)
@@ -102,7 +125,7 @@ try:
         JHU_LOADED = True
         print(f"    Rows: {len(jhu):,}  |  Countries with coords: {len(jhu_coords)}")
     else:
-        print("    JHU loaded but missing lat/lon columns — using fallback coords")
+        print("    JHU loaded but missing lat/lon — using fallback coords")
 except Exception as e:
     print(f"    JHU skipped: {e}")
 
@@ -113,63 +136,23 @@ print("[3/5] Loading vaccination data...")
 download_if_needed("final_vactination_data.csv")
 vac_latest = pd.DataFrame(columns=['country'])
 try:
-    vac_raw = pd.read_csv("final_vactination_data.csv", encoding='latin1', on_bad_lines='skip')
-    vac_raw.columns = vac_raw.columns.str.strip().str.lower()
-    if 'country' in vac_raw.columns:
-        vac_cols = [
-            'country', 'date', 'total_vaccinations', 'people_vaccinated',
-            'people_fully_vaccinated', 'total_boosters', 'daily_vaccinations_raw',
-            'daily_vaccinations', 'daily_people_vaccinated',
-            'daily_vaccinations_per_million', 'total_vaccinations_per_hundred',
-            'people_vaccinated_per_hundred', 'people_fully_vaccinated_per_hundred',
-            'total_boosters_per_hundred', 'daily_vaccinations_per_hundred',
-            'daily_people_vaccinated_per_hundred', 'share_doses_used',
-            'new_people_vaccinated_smoothed'
-        ]
-        if 'date' in vac_raw.columns:
-            vac_raw['date'] = pd.to_datetime(vac_raw['date'], errors='coerce')
-        for c in ['people_vaccinated_per_hundred', 'people_fully_vaccinated_per_hundred',
-                  'total_boosters_per_hundred', 'daily_vaccinations', 'total_vaccinations']:
-            if c in vac_raw.columns:
-                vac_raw[c] = pd.to_numeric(vac_raw[c], errors='coerce')
-        keep_v = [c for c in ['people_vaccinated_per_hundred',
-                               'people_fully_vaccinated_per_hundred',
-                               'total_boosters_per_hundred',
-                               'daily_vaccinations'] if c in vac_raw.columns]
-        if 'date' in vac_raw.columns:
-            vac_latest = (vac_raw.sort_values('date')
-                                 .groupby('country')[keep_v]
-                                 .last().reset_index())
-        else:
-            vac_latest = vac_raw.groupby('country')[keep_v].last().reset_index()
-    else:
-        # Packed format fallback
-        col0 = vac_raw.columns[0]
-        vac_col = vac_raw[col0].apply(lambda x: str(x).rsplit(',', 1)[0])
-        vac_df  = vac_col.str.split(',', expand=True)
-        vac_col_names = [
-            'country', 'date', 'total_vaccinations', 'people_vaccinated',
-            'people_fully_vaccinated', 'total_boosters', 'daily_vaccinations_raw',
-            'daily_vaccinations', 'daily_people_vaccinated',
-            'daily_vaccinations_per_million', 'total_vaccinations_per_hundred',
-            'people_vaccinated_per_hundred', 'people_fully_vaccinated_per_hundred',
-            'total_boosters_per_hundred', 'daily_vaccinations_per_hundred',
-            'daily_people_vaccinated_per_hundred', 'share_doses_used',
-            'new_people_vaccinated_smoothed'
-        ]
-        vac_df.columns = vac_col_names[:vac_df.shape[1]]
+    vac_df = pd.read_csv("final_vactination_data.csv", encoding='utf-8-sig', on_bad_lines='skip')
+    vac_df.columns = vac_df.columns.str.strip().str.lower()
+    if 'date' in vac_df.columns:
         vac_df['date'] = pd.to_datetime(vac_df['date'], errors='coerce')
-        for c in ['people_vaccinated_per_hundred', 'people_fully_vaccinated_per_hundred',
-                  'total_boosters_per_hundred', 'daily_vaccinations', 'total_vaccinations']:
-            if c in vac_df.columns:
-                vac_df[c] = pd.to_numeric(vac_df[c], errors='coerce')
-        keep_v = [c for c in ['people_vaccinated_per_hundred',
-                               'people_fully_vaccinated_per_hundred',
-                               'total_boosters_per_hundred',
-                               'daily_vaccinations'] if c in vac_df.columns]
-        vac_latest = (vac_df.sort_values('date')
-                             .groupby('country')[keep_v]
-                             .last().reset_index())
+    for c in ['people_vaccinated_per_hundred', 'people_fully_vaccinated_per_hundred',
+              'total_boosters_per_hundred', 'daily_vaccinations', 'total_vaccinations']:
+        if c in vac_df.columns:
+            vac_df[c] = pd.to_numeric(vac_df[c], errors='coerce')
+    keep_v = [c for c in ['people_vaccinated_per_hundred',
+                           'people_fully_vaccinated_per_hundred',
+                           'total_boosters_per_hundred',
+                           'daily_vaccinations'] if c in vac_df.columns]
+    if 'country' in vac_df.columns and keep_v:
+        if 'date' in vac_df.columns:
+            vac_latest = vac_df.sort_values('date').groupby('country')[keep_v].last().reset_index()
+        else:
+            vac_latest = vac_df.groupby('country')[keep_v].last().reset_index()
     print(f"    Countries: {vac_latest['country'].nunique()}")
 except Exception as e:
     print(f"    Vaccination skipped: {e}")
@@ -181,66 +164,34 @@ print("[4/5] Loading testing data...")
 download_if_needed("final_testing_data.csv")
 test_latest = pd.DataFrame(columns=['country'])
 try:
-    test_raw = pd.read_csv("final_testing_data.csv", encoding='latin1', on_bad_lines='skip')
-    test_raw.columns = test_raw.columns.str.strip().str.lower()
-    if 'country' in test_raw.columns or 'entity' in test_raw.columns:
-        if 'entity' in test_raw.columns:
-            test_raw['country'] = (test_raw['entity']
-                                   .str.replace(r'\s*-\s*tests.*', '', regex=True)
-                                   .str.strip())
-        if 'date' in test_raw.columns:
-            test_raw['date'] = pd.to_datetime(test_raw['date'], errors='coerce')
-        col_map = {}
-        for c in test_raw.columns:
-            cl = c.lower().strip()
-            if 'short-term positive rate' in cl:        col_map[c] = 'positivity_rate'
-            elif '7-day smoothed daily change' == cl:   col_map[c] = 'tests_7day_avg'
-            elif 'cumulative total per thousand' == cl: col_map[c] = 'tests_per_thousand'
-        test_raw.rename(columns=col_map, inplace=True)
-        for c in ['positivity_rate', 'tests_7day_avg', 'tests_per_thousand']:
-            if c in test_raw.columns:
-                test_raw[c] = pd.to_numeric(test_raw[c], errors='coerce')
-        if 'positivity_rate' in test_raw.columns:
-            test_raw['positivity_rate'] = test_raw['positivity_rate'].where(
-                test_raw['positivity_rate'] <= 100, np.nan)
-        keep_t = [c for c in ['positivity_rate', 'tests_7day_avg', 'tests_per_thousand']
-                  if c in test_raw.columns]
-        if 'date' in test_raw.columns:
-            test_latest = (test_raw.sort_values('date')
-                                   .groupby('country')[keep_t]
-                                   .last().reset_index())
-        else:
-            test_latest = test_raw.groupby('country')[keep_t].last().reset_index()
-    else:
-        # Packed format fallback
-        col0      = test_raw.columns[0]
-        test_cols = [c.strip() for c in col0.split(',')]
-        test_df   = test_raw[col0].str.split(',', expand=True)
-        test_df   = test_df.iloc[:, :len(test_cols)]
-        test_df.columns = test_cols[:test_df.shape[1]]
-        if 'entity' in test_df.columns:
-            test_df['country'] = (test_df['entity']
-                                  .str.replace(r'\s*-\s*tests.*', '', regex=True)
-                                  .str.strip())
+    test_df = pd.read_csv("final_testing_data.csv", encoding='utf-8-sig', on_bad_lines='skip')
+    test_df.columns = test_df.columns.str.strip().str.lower()
+    if 'entity' in test_df.columns:
+        test_df['country'] = (test_df['entity']
+                              .str.replace(r'\s*-\s*tests.*', '', regex=True)
+                              .str.strip())
+    if 'date' in test_df.columns:
         test_df['date'] = pd.to_datetime(test_df['date'], errors='coerce')
-        col_map = {}
-        for c in test_df.columns:
-            cl = c.lower().strip()
-            if 'short-term positive rate' in cl:        col_map[c] = 'positivity_rate'
-            elif '7-day smoothed daily change' == cl:   col_map[c] = 'tests_7day_avg'
-            elif 'cumulative total per thousand' == cl: col_map[c] = 'tests_per_thousand'
-        test_df.rename(columns=col_map, inplace=True)
-        for c in ['positivity_rate', 'tests_7day_avg', 'tests_per_thousand']:
-            if c in test_df.columns:
-                test_df[c] = pd.to_numeric(test_df[c], errors='coerce')
-        if 'positivity_rate' in test_df.columns:
-            test_df['positivity_rate'] = test_df['positivity_rate'].where(
-                test_df['positivity_rate'] <= 100, np.nan)
-        keep_t = [c for c in ['positivity_rate', 'tests_7day_avg', 'tests_per_thousand']
-                  if c in test_df.columns]
-        test_latest = (test_df.sort_values('date')
-                               .groupby('country')[keep_t]
-                               .last().reset_index())
+    col_map = {}
+    for c in test_df.columns:
+        cl = c.lower().strip()
+        if 'short-term positive rate' in cl:        col_map[c] = 'positivity_rate'
+        elif '7-day smoothed daily change' == cl:   col_map[c] = 'tests_7day_avg'
+        elif 'cumulative total per thousand' == cl: col_map[c] = 'tests_per_thousand'
+    test_df.rename(columns=col_map, inplace=True)
+    for c in ['positivity_rate', 'tests_7day_avg', 'tests_per_thousand']:
+        if c in test_df.columns:
+            test_df[c] = pd.to_numeric(test_df[c], errors='coerce')
+    if 'positivity_rate' in test_df.columns:
+        test_df['positivity_rate'] = test_df['positivity_rate'].where(
+            test_df['positivity_rate'] <= 100, np.nan)
+    keep_t = [c for c in ['positivity_rate', 'tests_7day_avg', 'tests_per_thousand']
+              if c in test_df.columns]
+    if 'country' in test_df.columns and keep_t:
+        if 'date' in test_df.columns:
+            test_latest = test_df.sort_values('date').groupby('country')[keep_t].last().reset_index()
+        else:
+            test_latest = test_df.groupby('country')[keep_t].last().reset_index()
     print(f"    Countries: {test_latest['country'].nunique()}")
 except Exception as e:
     print(f"    Testing skipped: {e}")
@@ -252,18 +203,12 @@ print("[5/5] Loading location data...")
 download_if_needed("final_location_data.csv")
 loc_df = pd.DataFrame(columns=['country', 'iso_code'])
 try:
-    loc_raw = pd.read_csv("final_location_data.csv", encoding='latin1', on_bad_lines='skip')
+    loc_raw = pd.read_csv("final_location_data.csv", encoding='utf-8-sig', on_bad_lines='skip')
     loc_raw.columns = loc_raw.columns.str.strip().str.lower()
     if 'country' in loc_raw.columns:
-        loc_df = loc_raw[['country'] + (['iso_code'] if 'iso_code' in loc_raw.columns else [])].dropna(subset=['country'])
+        cols = ['country'] + (['iso_code'] if 'iso_code' in loc_raw.columns else [])
+        loc_df = loc_raw[cols].dropna(subset=['country'])
         loc_df['country'] = loc_df['country'].str.strip()
-    else:
-        col0l     = loc_raw.columns[0]
-        extracted = loc_raw[col0l].str.extract(r'^([^,]+),([^,]+)')
-        extracted.columns = ['country', 'iso_code']
-        loc_df = extracted.dropna(subset=['country'])
-        loc_df['country']  = loc_df['country'].str.strip()
-        loc_df['iso_code'] = loc_df['iso_code'].str.strip()
     print(f"    Countries: {len(loc_df)}")
 except Exception as e:
     print(f"    Location skipped: {e}")
@@ -284,7 +229,7 @@ df['death_rate']     = (df['deaths'] / (df['cases'] + 1)) * 100
 df                   = df.fillna(0)
 
 # ======================================
-# STEP 9: BUILD MERGED LATEST SNAPSHOT
+# STEP 9: MERGE DATASETS
 # ======================================
 print(" Merging all datasets...")
 latest_df = df.sort_values('date').groupby('country').last().reset_index()
@@ -298,7 +243,6 @@ else:
     latest_df['lat'] = np.nan
     latest_df['lon'] = np.nan
 
-# Fallback coordinates
 COORDS = {
     'Afghanistan':(33.93,67.71),'Albania':(41.15,20.17),'Algeria':(28.03,1.66),
     'Argentina':(-38.42,-63.62),'Australia':(-25.27,133.78),'Austria':(47.52,14.55),
@@ -331,7 +275,6 @@ latest_df.loc[mask, 'lat'] = latest_df.loc[mask, 'country'].map(
     lambda c: COORDS.get(c, (np.nan, np.nan))[0])
 latest_df.loc[mask, 'lon'] = latest_df.loc[mask, 'country'].map(
     lambda c: COORDS.get(c, (np.nan, np.nan))[1])
-
 print(f" Merged: {latest_df.shape[0]} countries x {latest_df.shape[1]} columns")
 
 # ======================================
@@ -382,7 +325,6 @@ for country, group in df.groupby('country'):
     })
 
 result_df = pd.DataFrame(results)
-
 p66 = result_df['predicted_cases'].quantile(0.66)
 p33 = result_df['predicted_cases'].quantile(0.33)
 
@@ -397,7 +339,7 @@ print(result_df[['country','current_cases','predicted_cases','risk']].head(8).to
 print("\n Risk distribution:\n", result_df['risk'].value_counts().to_string())
 
 # ======================================
-# STEP 11: PROPHET MODEL — TOP COUNTRY
+# STEP 11: PROPHET MODEL
 # ======================================
 country_name = df['country'].value_counts().index[0]
 country_df   = df[df['country'] == country_name].copy()
@@ -424,7 +366,7 @@ rmse = np.sqrt(mean_squared_error(merged_eval['y'], merged_eval['yhat']))
 print(f" MAE: {mae:,.0f}  |  RMSE: {rmse:,.0f}")
 
 # ======================================
-# STEP 12: RANDOM FOREST FEATURE IMPORTANCE
+# STEP 12: RANDOM FOREST
 # ======================================
 print("\n Random Forest feature importance...")
 rf_cols  = ['cases_per_100k', 'death_rate', 'vax_rate',
@@ -445,31 +387,24 @@ if len(rf_df) > 20 and 'predicted_cases' in rf_df.columns:
         RF_DONE = True
 
 # ======================================
-# STEP 13–22: PLOTS (browser/local only)
+# STEP 13-22: PLOTS
 # ======================================
+print("\n Generating charts...")
 EXCLUDE = ['European Union', 'High-income', 'Upper-middle', 'Low-income',
            'Lower-middle', 'World', 'Asia', 'Europe', 'Africa', 'Americas',
-           'North America', 'South America', 'Oceania', 'International',
-           'Monaco', 'income']
+           'North America', 'South America', 'Oceania', 'International', 'Monaco', 'income']
 df_real = df[~df['country'].str.contains('|'.join(EXCLUDE), case=False, na=False)]
 top5    = df_real['country'].value_counts().head(5).index.tolist()
 df_top  = df_real[df_real['country'].isin(top5)]
 
-print("\n Generating charts...")
-
-fig1 = px.line(df_top, x='date', y='cases', color='country',
-               title="COVID-19 Cases Trend — Top 5 Countries",
-               labels={'cases': 'Total Cases', 'date': 'Date'})
-fig1.update_layout(hovermode='x unified')
-fig1.show()
+px.line(df_top, x='date', y='cases', color='country',
+        title="COVID-19 Cases Trend — Top 5 Countries").show()
 
 fig2 = go.Figure()
 fig2.add_trace(go.Scatter(x=model_df['ds'], y=model_df['y'],
-                          mode='lines', name='Actual',
-                          line=dict(color='steelblue', width=2)))
+                          mode='lines', name='Actual', line=dict(color='steelblue', width=2)))
 fig2.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'].clip(0),
-                          mode='lines', name='Forecast',
-                          line=dict(color='orange', width=2)))
+                          mode='lines', name='Forecast', line=dict(color='orange', width=2)))
 fig2.add_trace(go.Scatter(
     x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
     y=pd.concat([forecast['yhat_upper'].clip(0), forecast['yhat_lower'].clip(0)[::-1]]),
@@ -479,85 +414,62 @@ fig2.update_layout(title=f"Prophet 30-Day Forecast — {country_name}",
                    xaxis_title="Date", yaxis_title="Cases", hovermode='x unified')
 fig2.show()
 
-fig3 = px.bar(df_top, x='date', y='daily_cases', color='country',
-              barmode='group', title="Daily New Cases — Top 5 Countries",
-              labels={'daily_cases': 'Daily Cases', 'date': 'Date'})
-fig3.show()
+px.bar(df_top, x='date', y='daily_cases', color='country', barmode='group',
+       title="Daily New Cases — Top 5 Countries").show()
 
-fig4 = px.line(df_top, x='date', y='moving_avg_14', color='country',
-               title="14-Day Moving Average — Top 5 Countries",
-               labels={'moving_avg_14': '14-Day Avg Cases'})
-fig4.show()
+px.line(df_top, x='date', y='moving_avg_14', color='country',
+        title="14-Day Moving Average — Top 5 Countries").show()
 
 vac_scatter = result_df.dropna(subset=['vax_rate', 'cases_per_100k'])
 if len(vac_scatter) > 3:
-    fig5 = px.scatter(
-        vac_scatter, x='vax_rate', y='cases_per_100k',
-        color='risk',
-        color_discrete_map={'High': 'red', 'Medium': 'orange', 'Low': 'green'},
-        size='current_cases', size_max=45, hover_name='country',
-        title="Vaccination Rate vs Cases per 100k",
-        labels={'vax_rate': '% Vaccinated', 'cases_per_100k': 'Cases per 100k'})
-    fig5.show()
+    px.scatter(vac_scatter, x='vax_rate', y='cases_per_100k', color='risk',
+               color_discrete_map={'High':'red','Medium':'orange','Low':'green'},
+               size='current_cases', size_max=45, hover_name='country',
+               title="Vaccination Rate vs Cases per 100k").show()
 
 if RF_DONE and len(feat_imp) > 0:
-    fig6 = px.bar(x=feat_imp.values, y=feat_imp.index, orientation='h',
-                  title="What Drives Predicted Cases? — Random Forest",
-                  labels={'x': 'Importance Score', 'y': 'Feature'},
-                  color=feat_imp.values, color_continuous_scale='Reds')
-    fig6.update_layout(yaxis={'categoryorder': 'total ascending'})
-    fig6.show()
+    px.bar(x=feat_imp.values, y=feat_imp.index, orientation='h',
+           title="What Drives Predicted Cases? — Random Forest",
+           color=feat_imp.values, color_continuous_scale='Reds').show()
 
-dr_plot = result_df.dropna(subset=['vax_rate', 'death_rate'])
+dr_plot = result_df.dropna(subset=['vax_rate','death_rate'])
 dr_plot = dr_plot[dr_plot['death_rate'] > 0]
 if len(dr_plot) > 5:
-    fig7 = px.scatter(dr_plot, x='vax_rate', y='death_rate',
-                      color='risk', trendline='ols',
-                      color_discrete_map={'High': 'red', 'Medium': 'orange', 'Low': 'green'},
-                      hover_name='country',
-                      title="Vaccination Rate vs Death Rate (with trend line)",
-                      labels={'vax_rate': '% Vaccinated', 'death_rate': 'Death Rate (%)'})
-    fig7.show()
+    px.scatter(dr_plot, x='vax_rate', y='death_rate', color='risk', trendline='ols',
+               color_discrete_map={'High':'red','Medium':'orange','Low':'green'},
+               hover_name='country', title="Vaccination Rate vs Death Rate").show()
 
-hover_cols = {c: True for c in ['cases_per_100k', 'people_vaccinated_per_hundred',
+hover_cols = {c: True for c in ['cases_per_100k','people_vaccinated_per_hundred',
                                  'positivity_rate'] if c in latest_df.columns}
-fig8 = px.choropleth(latest_df, locations="country", locationmode="country names",
-                     color="cases", color_continuous_scale="Reds",
-                     hover_data=hover_cols,
-                     title="Global COVID-19 Total Cases Map")
-fig8.show()
+px.choropleth(latest_df, locations="country", locationmode="country names",
+              color="cases", color_continuous_scale="Reds",
+              hover_data=hover_cols, title="Global COVID-19 Total Cases Map").show()
 
-fig9 = px.choropleth(result_df, locations="country", locationmode="country names",
-                     color="risk",
-                     color_discrete_map={'High': 'red', 'Medium': 'orange', 'Low': 'green'},
-                     hover_data=['current_cases', 'predicted_cases',
-                                 'vax_rate', 'positivity_rate', 'death_rate'],
-                     title="Global COVID-19 Risk Map — 14-Day Forecast")
-fig9.show()
+px.choropleth(result_df, locations="country", locationmode="country names",
+              color="risk", color_discrete_map={'High':'red','Medium':'orange','Low':'green'},
+              hover_data=['current_cases','predicted_cases','vax_rate','positivity_rate','death_rate'],
+              title="Global COVID-19 Risk Map — 14-Day Forecast").show()
 
 if 'positivity_rate' in result_df.columns:
     pos_plot = result_df.dropna(subset=['positivity_rate'])
     pos_plot = pos_plot[pos_plot['positivity_rate'] > 0].nlargest(20, 'positivity_rate')
     if len(pos_plot) > 0:
         fig10 = px.bar(pos_plot, x='country', y='positivity_rate', color='risk',
-                       color_discrete_map={'High': 'red', 'Medium': 'orange', 'Low': 'green'},
-                       title="Top 20 Countries by Test Positivity Rate",
-                       labels={'positivity_rate': 'Positivity Rate'})
+                       color_discrete_map={'High':'red','Medium':'orange','Low':'green'},
+                       title="Top 20 Countries by Test Positivity Rate")
         fig10.update_layout(xaxis_tickangle=-45)
         fig10.show()
 
 # ======================================
-# STEP 23: FOLIUM INTERACTIVE RISK MAP
+# STEP 23: FOLIUM RISK MAP
 # ======================================
 print("\n Building Folium interactive map...")
 m = folium.Map(location=[20, 0], zoom_start=2, tiles='CartoDB positron')
-
 high_grp   = folium.FeatureGroup(name="High Risk",   show=True)
 medium_grp = folium.FeatureGroup(name="Medium Risk", show=True)
 low_grp    = folium.FeatureGroup(name="Low Risk",    show=True)
 heat_grp   = folium.FeatureGroup(name="Heatmap",     show=False)
-
-CMAP = {'High': '#e74c3c', 'Medium': '#f39c12', 'Low': '#27ae60'}
+CMAP = {'High':'#e74c3c','Medium':'#f39c12','Low':'#27ae60'}
 
 def fmt(val, suffix='', dec=1):
     try:
@@ -565,9 +477,7 @@ def fmt(val, suffix='', dec=1):
     except Exception:
         return "N/A"
 
-max_pred = result_df['predicted_cases'].max()
-if max_pred == 0:
-    max_pred = 1
+max_pred = max(result_df['predicted_cases'].max(), 1)
 
 for _, row in result_df.iterrows():
     try:
@@ -579,39 +489,31 @@ for _, row in result_df.iterrows():
             <b>Current cases:</b> {int(row['current_cases']):,}<br>
             <b>Predicted (14d):</b> {int(row['predicted_cases']):,}<br>
             <b>Cases per 100k:</b> {fmt(row['cases_per_100k'])}<br>
-            <b>Death rate:</b> {fmt(row['death_rate'], '%', 2)}<br>
+            <b>Death rate:</b> {fmt(row['death_rate'],'%',2)}<br>
             <hr style='margin:4px 0'>
-            <b>Vaccinated:</b> {fmt(row['vax_rate'], '%')}<br>
-            <b>Fully vaccinated:</b> {fmt(row['full_vax_rate'], '%')}<br>
+            <b>Vaccinated:</b> {fmt(row['vax_rate'],'%')}<br>
+            <b>Fully vaccinated:</b> {fmt(row['full_vax_rate'],'%')}<br>
             <b>Positivity rate:</b> {fmt(row['positivity_rate'])}<br>
-            <b>Tests 7-day avg:</b> {fmt(row['tests_7day_avg'], '', 0)}<br>
+            <b>Tests 7-day avg:</b> {fmt(row['tests_7day_avg'],'',0)}<br>
             <hr style='margin:4px 0'>
             <b>Risk: <span style='color:{risk_color}'>{row['risk']}</span></b>
         </div>"""
         radius = max(row['predicted_cases'] / max_pred * 35, 4)
         circle = folium.CircleMarker(
             location=[float(row['lat']), float(row['lon'])],
-            radius=radius,
-            color=risk_color, fill=True, fill_color=risk_color,
-            fill_opacity=0.65, weight=1,
+            radius=radius, color=risk_color, fill=True,
+            fill_color=risk_color, fill_opacity=0.65, weight=1,
             popup=folium.Popup(popup_html, max_width=260),
-            tooltip=f"{row['country']} — {row['risk']} Risk"
-        )
+            tooltip=f"{row['country']} — {row['risk']} Risk")
         if   row['risk'] == 'High':   circle.add_to(high_grp)
         elif row['risk'] == 'Medium': circle.add_to(medium_grp)
         else:                         circle.add_to(low_grp)
     except Exception:
         continue
 
-heat_data = []
-for _, row in result_df.iterrows():
-    try:
-        if pd.notna(row['lat']) and pd.notna(row['lon']):
-            heat_data.append([float(row['lat']), float(row['lon']),
-                              float(row['predicted_cases'])])
-    except Exception:
-        continue
-
+heat_data = [[float(r['lat']), float(r['lon']), float(r['predicted_cases'])]
+             for _, r in result_df.iterrows()
+             if pd.notna(r['lat']) and pd.notna(r['lon'])]
 if heat_data:
     HeatMap(heat_data, radius=20, blur=15, min_opacity=0.3).add_to(heat_grp)
 
@@ -627,12 +529,9 @@ m.get_root().html.add_child(folium.Element("""
     <b style='font-size:14px'>14-Day Predicted Risk</b><br><br>
     <span style='color:#e74c3c;font-size:18px'>&#9679;</span> <b>High risk</b><br>
     <span style='color:#f39c12;font-size:18px'>&#9679;</span> <b>Medium risk</b><br>
-    <span style='color:#27ae60;font-size:18px'>&#9679;</span> <b>Low risk</b><br>
-    <hr style='margin:8px 0'>
-    <small><b>Circle size</b> = relative predicted cases</small>
+    <span style='color:#27ae60;font-size:18px'>&#9679;</span> <b>Low risk</b>
 </div>"""))
 
-# Save map locally
 m.save("ml_risk_map.html")
 print(" Map saved: ml_risk_map.html")
 
@@ -642,16 +541,15 @@ print(" Map saved: ml_risk_map.html")
 print("\n" + "=" * 60)
 print("  TOP 10 HIGH RISK COUNTRIES")
 print("=" * 60)
-high_risk    = (result_df[result_df['risk'] == 'High']
-                .sort_values('predicted_cases', ascending=False)
-                .head(10))
-display_cols = [c for c in ['country', 'current_cases', 'predicted_cases',
-                             'cases_per_100k', 'vax_rate', 'positivity_rate',
-                             'death_rate', 'risk'] if c in high_risk.columns]
+high_risk    = result_df[result_df['risk']=='High'].sort_values(
+    'predicted_cases', ascending=False).head(10)
+display_cols = [c for c in ['country','current_cases','predicted_cases',
+                             'cases_per_100k','vax_rate','positivity_rate',
+                             'death_rate','risk'] if c in high_risk.columns]
 print(high_risk[display_cols].to_string(index=False))
 
 # ======================================
-# STEP 25: SAVE ALL OUTPUTS
+# STEP 25: SAVE OUTPUTS
 # ======================================
 print("\n Saving outputs...")
 try:
@@ -666,12 +564,7 @@ except Exception as e:
 print("\n" + "=" * 60)
 print("  OUTPUTS")
 print("=" * 60)
-print("  final_predictions.csv     Prophet 30-day forecast")
-print(f"  final_risk.csv            Hotspot risk — {country_name}")
-print("  global_risk_map_data.csv  Per-country ML risk")
-print("  merged_latest.csv         Full merged dataset")
-print("  ml_risk_map.html          Interactive Folium risk map")
-print(f"\n  Prophet MAE  : {mae:,.0f}")
+print(f"  Prophet MAE  : {mae:,.0f}")
 print(f"  Prophet RMSE : {rmse:,.0f}")
-print("\n  FINAL PROJECT COMPLETED SUCCESSFULLY!")
+print("\n  COMPLETED SUCCESSFULLY!")
 print("=" * 60)
