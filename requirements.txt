@@ -6,5 +6,5 @@ folium
 streamlit-folium
 prophet
 scikit-learn
-gdown
 openpyxl
+requests
