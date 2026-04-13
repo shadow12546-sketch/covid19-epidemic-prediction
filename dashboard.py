@@ -15,7 +15,8 @@ from streamlit_folium import st_folium
 from prophet import Prophet
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error
-import gdown
+import requests
+import re
 import os
 import warnings
 warnings.filterwarnings('ignore')
@@ -53,13 +54,6 @@ st.markdown("""
     div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
         color: #aaaaaa !important;
     }
-    .metric-card {
-        background: rgba(255,255,255,0.05);
-        border-radius: 10px;
-        padding: 16px;
-        border-left: 4px solid #e74c3c;
-        margin-bottom: 10px;
-    }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 6px 6px 0 0;
@@ -72,23 +66,47 @@ st.markdown("""
 # GOOGLE DRIVE FILE IDs
 # ======================================
 DRIVE_FILES = {
-    "final_owid_output.csv":       "12EDDaOpZXrtbgQnj2ICkeDoiKxgmEBQs",
-    "cleaned_covid_data.csv":      "1vUnB0hZJB1lg5lb_7BKifmiI4HEcgFif",
-    "final_location_data.csv":     "1SnKD5y_nhs_5YqV-kQeWLRHwbp7qbdjj",
-    "final_testing_data.csv":      "1uVod4Fua-vJg1rQRsTvUlSEbBGtfsHkC",
-    "final_vactination_data.csv":  "1SMU_kshL9R_Dd6_aRRiyqohlknsIOzlx",
-    "final_predictions.csv":       "11Voxbw_anwCsaeMJ_gM62hvEDy4EVVPh",
-    "final_risk.csv":              "1OAZp5xQgR7RtMMJyfKtobf1ETrgSMmy0",
-    "global_risk_map_data.csv":    "1MRMHlpRtNWjleuQgF941k_lquj4MIc_S",
-    "merged_latest.csv":           "1JEbTNM-3v_cb7opAiGNWt38DpY0Er8BC",
+    "final_owid_output.csv":      "12EDDaOpZXrtbgQnj2ICkeDoiKxgmEBQs",
+    "cleaned_covid_data.csv":     "1vUnB0hZJB1lg5lb_7BKifmiI4HEcgFif",
+    "final_location_data.csv":    "1SnKD5y_nhs_5YqV-kQeWLRHwbp7qbdjj",
+    "final_testing_data.csv":     "1uVod4Fua-vJg1rQRsTvUlSEbBGtfsHkC",
+    "final_vactination_data.csv": "1SMU_kshL9R_Dd6_aRRiyqohlknsIOzlx",
+    "final_predictions.csv":      "11Voxbw_anwCsaeMJ_gM62hvEDy4EVVPh",
+    "final_risk.csv":             "1OAZp5xQgR7RtMMJyfKtobf1ETrgSMmy0",
+    "global_risk_map_data.csv":   "1MRMHlpRtNWjleuQgF941k_lquj4MIc_S",
+    "merged_latest.csv":          "1JEbTNM-3v_cb7opAiGNWt38DpY0Er8BC",
 }
 
 def download_if_needed(filename):
-    """Download file from Google Drive if not already present."""
+    """Download file from Google Drive, handling large-file confirmation."""
     if not os.path.exists(filename):
         file_id = DRIVE_FILES[filename]
-        url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
-        gdown.download(url, filename, quiet=False, fuzzy=True)
+        session = requests.Session()
+
+        url = f"https://drive.google.com/uc?id={file_id}&export=download"
+        response = session.get(url, stream=True)
+
+        # Get confirmation token for large files
+        token = None
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                token = value
+                break
+
+        if token is None:
+            content_start = response.content[:4096].decode('utf-8', errors='ignore')
+            match = re.search(r'confirm=([0-9A-Za-z_]+)', content_start)
+            if match:
+                token = match.group(1)
+
+        if token:
+            url = f"https://drive.google.com/uc?id={file_id}&export=download&confirm={token}"
+            response = session.get(url, stream=True)
+
+        with open(filename, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=32768):
+                if chunk:
+                    f.write(chunk)
 
 # ======================================
 # LOAD DATA (cached)
@@ -97,9 +115,12 @@ def download_if_needed(filename):
 def load_owid():
     download_if_needed("final_owid_output.csv")
     try:
-        df = pd.read_csv("final_owid_output.csv", encoding='latin1', on_bad_lines='skip')
+        df = pd.read_csv("final_owid_output.csv", encoding='utf-8-sig', on_bad_lines='skip')
     except Exception:
-        df = pd.read_csv("final_owid_output.csv", encoding='utf-8', on_bad_lines='skip')
+        try:
+            df = pd.read_csv("final_owid_output.csv", encoding='latin1', on_bad_lines='skip')
+        except Exception:
+            df = pd.read_excel("final_owid_output.csv", engine='openpyxl')
     df.columns        = df.columns.str.strip().str.lower()
     df['date']        = pd.to_datetime(df['date'], errors='coerce')
     df['cases']       = pd.to_numeric(df['cases'],       errors='coerce').fillna(0)
@@ -129,7 +150,7 @@ def load_owid():
 def load_risk():
     try:
         download_if_needed("global_risk_map_data.csv")
-        return pd.read_csv("global_risk_map_data.csv")
+        return pd.read_csv("global_risk_map_data.csv", encoding='utf-8-sig', on_bad_lines='skip')
     except Exception:
         return pd.DataFrame()
 
@@ -137,7 +158,7 @@ def load_risk():
 def load_predictions():
     try:
         download_if_needed("final_predictions.csv")
-        df = pd.read_csv("final_predictions.csv")
+        df = pd.read_csv("final_predictions.csv", encoding='utf-8-sig', on_bad_lines='skip')
         df['ds'] = pd.to_datetime(df['ds'])
         return df
     except Exception:
@@ -177,7 +198,7 @@ COORDS = {
 # ======================================
 # LOAD DATA
 # ======================================
-with st.spinner("Loading data from Google Drive (first run may take a moment)..."):
+with st.spinner("Loading data (first run downloads from Google Drive)..."):
     df      = load_owid()
     risk_df = load_risk()
     pred_df = load_predictions()
@@ -241,7 +262,6 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Actions")
     if st.button("🔄  Refresh Data", use_container_width=True):
-        # Delete cached files so they re-download
         for fname in DRIVE_FILES:
             if os.path.exists(fname):
                 os.remove(fname)
@@ -497,7 +517,6 @@ with tab4:
             border-radius: 10px;
             border: 1px solid rgba(255,255,255,0.1);
         }
-        .stApp { background-color: #0e1117 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -520,8 +539,7 @@ with tab4:
 
     with c_map:
         m = folium.Map(location=[20, 0], zoom_start=2,
-                       tiles='CartoDB positron',
-                       prefer_canvas=True)
+                       tiles='CartoDB positron', prefer_canvas=True)
 
         CMAP = {'High':'#e74c3c','Medium':'#f39c12','Low':'#27ae60'}
 
@@ -538,7 +556,7 @@ with tab4:
 
             for _, row in plot_df.iterrows():
                 try:
-                    risk = row.get('risk','Low')
+                    risk  = row.get('risk','Low')
                     if risk == 'High'   and not show_high:   continue
                     if risk == 'Medium' and not show_medium: continue
                     if risk == 'Low'    and not show_low:    continue
