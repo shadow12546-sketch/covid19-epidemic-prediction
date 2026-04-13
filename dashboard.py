@@ -87,8 +87,8 @@ def download_if_needed(filename):
     """Download file from Google Drive if not already present."""
     if not os.path.exists(filename):
         file_id = DRIVE_FILES[filename]
-        url = f"https://drive.google.com/uc?id={file_id}"
-        gdown.download(url, filename, quiet=False)
+        url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
+        gdown.download(url, filename, quiet=False, fuzzy=True)
 
 # ======================================
 # LOAD DATA (cached)
