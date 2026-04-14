@@ -59,6 +59,13 @@ st.markdown("""
         border-radius: 6px 6px 0 0;
         padding: 8px 16px;
     }
+    .map-info-box {
+        background: rgba(255,255,255,0.05);
+        border-radius: 10px;
+        padding: 14px;
+        border: 1px solid rgba(255,255,255,0.1);
+        margin-bottom: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -82,25 +89,22 @@ def download_if_needed(filename):
     if not os.path.exists(filename):
         file_id = DRIVE_FILES[filename]
         session = requests.Session()
-
-        url = f"https://drive.google.com/uc?id={file_id}&export=download"
+        url      = f"https://drive.google.com/uc?id={file_id}&export=download"
         response = session.get(url, stream=True)
 
-        # Get confirmation token for large files
+        # Confirmation token for large files
         token = None
         for key, value in response.cookies.items():
             if key.startswith('download_warning'):
                 token = value
                 break
-
         if token is None:
             content_start = response.content[:4096].decode('utf-8', errors='ignore')
             match = re.search(r'confirm=([0-9A-Za-z_]+)', content_start)
             if match:
                 token = match.group(1)
-
         if token:
-            url = f"https://drive.google.com/uc?id={file_id}&export=download&confirm={token}"
+            url      = f"https://drive.google.com/uc?id={file_id}&export=download&confirm={token}"
             response = session.get(url, stream=True)
 
         with open(filename, 'wb') as f:
@@ -219,7 +223,7 @@ with st.sidebar:
     st.markdown("**CodeCure AI Hackathon — Track C**")
     st.markdown("---")
 
-    st.subheader("Filters")
+    st.subheader("🔍 Filters")
     selected_countries = st.multiselect(
         "Select countries",
         options=countries,
@@ -244,7 +248,7 @@ with st.sidebar:
         end_date   = pd.Timestamp(date_max)
 
     st.markdown("---")
-    st.subheader("Forecast Settings")
+    st.subheader("🔮 Forecast Settings")
     forecast_country = st.selectbox(
         "Country for forecast",
         options=countries,
@@ -253,14 +257,23 @@ with st.sidebar:
     forecast_days = st.slider("Forecast horizon (days)", 7, 60, 30)
 
     st.markdown("---")
-    st.subheader("Map Settings")
+    st.subheader("🗺️ Map Settings")
+    map_tile = st.selectbox(
+        "Map style",
+        ["Dark (recommended)", "Light", "Satellite-style"],
+        index=0
+    )
     show_heatmap = st.checkbox("Show heatmap layer", value=False)
     show_high    = st.checkbox("High risk markers",  value=True)
     show_medium  = st.checkbox("Medium risk markers",value=True)
     show_low     = st.checkbox("Low risk markers",   value=True)
 
     st.markdown("---")
-    st.subheader("Actions")
+    st.subheader("⚡ Actions")
+
+    if st.button("🗺️  Open Risk Map Tab", use_container_width=True):
+        st.info("👆 Click the **🗺️ Risk Map** tab above to view the interactive map")
+
     if st.button("🔄  Refresh Data", use_container_width=True):
         for fname in DRIVE_FILES:
             if os.path.exists(fname):
@@ -269,6 +282,29 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
+
+    # Risk summary in sidebar
+    if not risk_df.empty and 'risk' in risk_df.columns:
+        st.subheader("🌍 Risk Summary")
+        rc = risk_df['risk'].value_counts()
+        col_h, col_m, col_l = st.columns(3)
+        with col_h:
+            st.markdown(f"<div style='text-align:center;background:#e74c3c22;border-radius:8px;padding:8px'>"
+                        f"<div style='font-size:20px'>🔴</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:#e74c3c'>{rc.get('High',0)}</div>"
+                        f"<div style='font-size:11px;color:#aaa'>High</div></div>", unsafe_allow_html=True)
+        with col_m:
+            st.markdown(f"<div style='text-align:center;background:#f39c1222;border-radius:8px;padding:8px'>"
+                        f"<div style='font-size:20px'>🟠</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:#f39c12'>{rc.get('Medium',0)}</div>"
+                        f"<div style='font-size:11px;color:#aaa'>Medium</div></div>", unsafe_allow_html=True)
+        with col_l:
+            st.markdown(f"<div style='text-align:center;background:#27ae6022;border-radius:8px;padding:8px'>"
+                        f"<div style='font-size:20px'>🟢</div>"
+                        f"<div style='font-size:18px;font-weight:700;color:#27ae60'>{rc.get('Low',0)}</div>"
+                        f"<div style='font-size:11px;color:#aaa'>Low</div></div>", unsafe_allow_html=True)
+        st.markdown("")
+
     st.caption("Data: OWID · JHU · WHO · 2020–2024")
 
 # ======================================
@@ -508,38 +544,64 @@ with tab3:
 # TAB 4: RISK MAP
 # ======================================
 with tab4:
-    st.subheader("Interactive Risk Map")
+    st.subheader("🗺️ Interactive Risk Map")
+    st.markdown("Circle size = predicted 14-day cases &nbsp;|&nbsp; Click any circle for full stats")
 
-    st.markdown("""
-    <style>
-        iframe[title="streamlit_folium.st_folium"] {
-            filter: none !important;
-            border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-    </style>
-    """, unsafe_allow_html=True)
+    # Map tile selection
+    tile_map = {
+        "Dark (recommended)": "CartoDB dark_matter",
+        "Light":              "CartoDB positron",
+        "Satellite-style":    "OpenStreetMap",
+    }
+    selected_tile = tile_map.get(map_tile, "CartoDB dark_matter")
 
     c_map, c_info = st.columns([3, 1])
 
     with c_info:
-        st.markdown("**Risk Summary**")
+        st.markdown("**Risk Legend**")
+        st.markdown("""
+        <div style='background:rgba(231,76,60,0.15);border-left:4px solid #e74c3c;
+             border-radius:6px;padding:8px 12px;margin-bottom:8px'>
+            🔴 <b style='color:#e74c3c'>High Risk</b><br>
+            <span style='font-size:12px;color:#aaa'>Fast-growing outbreak</span>
+        </div>
+        <div style='background:rgba(243,156,18,0.15);border-left:4px solid #f39c12;
+             border-radius:6px;padding:8px 12px;margin-bottom:8px'>
+            🟠 <b style='color:#f39c12'>Medium Risk</b><br>
+            <span style='font-size:12px;color:#aaa'>Moderate spread</span>
+        </div>
+        <div style='background:rgba(39,174,96,0.15);border-left:4px solid #27ae60;
+             border-radius:6px;padding:8px 12px;margin-bottom:8px'>
+            🟢 <b style='color:#27ae60'>Low Risk</b><br>
+            <span style='font-size:12px;color:#aaa'>Under control</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("---")
         if not risk_df.empty and 'risk' in risk_df.columns:
+            st.markdown("**Country Count**")
             rc = risk_df['risk'].value_counts()
-            icons = {'High':'🔴','Medium':'🟠','Low':'🟢'}
-            for r, c in rc.items():
-                st.markdown(f"{icons.get(r,'⚪')} **{r}**: {c} countries")
-        st.markdown("---")
-        st.markdown("**Legend**")
-        st.markdown("🔴 High risk")
-        st.markdown("🟠 Medium risk")
-        st.markdown("🟢 Low risk")
-        st.markdown("---")
-        st.caption("Circle size = predicted cases")
+            st.markdown(f"🔴 High: **{rc.get('High', 0)}** countries")
+            st.markdown(f"🟠 Medium: **{rc.get('Medium', 0)}** countries")
+            st.markdown(f"🟢 Low: **{rc.get('Low', 0)}** countries")
+            st.markdown("---")
+            if not risk_df.empty and 'predicted_cases' in risk_df.columns:
+                top3 = risk_df[risk_df['risk']=='High'].nlargest(3, 'predicted_cases')
+                if not top3.empty:
+                    st.markdown("**Top High Risk**")
+                    for _, row in top3.iterrows():
+                        st.markdown(f"🔴 {row['country']}")
+
+        st.caption("Circle size ∝ predicted cases\nClick circle for details")
 
     with c_map:
-        m = folium.Map(location=[20, 0], zoom_start=2,
-                       tiles='CartoDB positron', prefer_canvas=True)
+        # Build folium map with dark tiles
+        fmap = folium.Map(
+            location=[20, 0],
+            zoom_start=2,
+            tiles=selected_tile,
+            prefer_canvas=True
+        )
 
         CMAP = {'High':'#e74c3c','Medium':'#f39c12','Low':'#27ae60'}
 
@@ -561,29 +623,50 @@ with tab4:
                     if risk == 'Medium' and not show_medium: continue
                     if risk == 'Low'    and not show_low:    continue
 
-                    color = CMAP.get(risk,'gray')
-                    vax   = f"{row['vax_rate']:.1f}%" if 'vax_rate' in row and pd.notna(row.get('vax_rate')) else "N/A"
+                    color = CMAP.get(risk, 'gray')
+                    vax   = f"{row['vax_rate']:.1f}%"       if 'vax_rate'        in row and pd.notna(row.get('vax_rate'))        else "N/A"
                     pos   = f"{row['positivity_rate']:.2f}" if 'positivity_rate' in row and pd.notna(row.get('positivity_rate')) else "N/A"
+                    dr    = f"{row['death_rate']:.3f}%"     if 'death_rate'      in row and pd.notna(row.get('death_rate'))      else "N/A"
 
                     popup_html = f"""
-                    <div style='font-family:Arial;font-size:12px;min-width:180px'>
-                        <b style='font-size:14px'>{row['country']}</b><br>
-                        <hr style='margin:3px 0'>
-                        <b>Current:</b> {int(row['current_cases']):,}<br>
-                        <b>Predicted (14d):</b> {int(row['predicted_cases']):,}<br>
-                        <b>Vaccinated:</b> {vax}<br>
-                        <b>Positivity:</b> {pos}<br>
-                        <b>Risk: <span style='color:{color}'>{risk}</span></b>
+                    <div style='font-family:Arial;font-size:12px;min-width:200px;
+                                background:#1a1a2e;color:#eee;border-radius:8px;padding:12px'>
+                        <b style='font-size:15px;color:{color}'>{row['country']}</b><br>
+                        <hr style='margin:6px 0;border-color:#444'>
+                        <b style='color:#aaa'>Current cases:</b>
+                            <span style='color:#fff'>{int(row['current_cases']):,}</span><br>
+                        <b style='color:#aaa'>Predicted (14d):</b>
+                            <span style='color:{color};font-weight:700'>{int(row['predicted_cases']):,}</span><br>
+                        <b style='color:#aaa'>Death rate:</b>
+                            <span style='color:#fff'>{dr}</span><br>
+                        <hr style='margin:6px 0;border-color:#444'>
+                        <b style='color:#aaa'>Vaccinated:</b>
+                            <span style='color:#fff'>{vax}</span><br>
+                        <b style='color:#aaa'>Positivity:</b>
+                            <span style='color:#fff'>{pos}</span><br>
+                        <hr style='margin:6px 0;border-color:#444'>
+                        <b>Risk: <span style='color:{color};font-size:14px'>{risk}</span></b>
                     </div>"""
+
+                    # Bigger, more visible circles
+                    radius = max(row['predicted_cases'] / max_cases * 40, 8)
 
                     folium.CircleMarker(
                         location=[float(row['lat']), float(row['lon'])],
-                        radius=max(row['predicted_cases'] / max_cases * 30, 4),
-                        color=color, fill=True, fill_color=color,
-                        fill_opacity=0.65, weight=1,
-                        popup=folium.Popup(popup_html, max_width=220),
-                        tooltip=f"{row['country']} — {risk} Risk"
-                    ).add_to(m)
+                        radius=radius,
+                        color=color,
+                        fill=True,
+                        fill_color=color,
+                        fill_opacity=0.85,
+                        weight=2,
+                        popup=folium.Popup(popup_html, max_width=240),
+                        tooltip=folium.Tooltip(
+                            f"<b>{row['country']}</b> — "
+                            f"<span style='color:{color}'>{risk} Risk</span><br>"
+                            f"Predicted: {int(row['predicted_cases']):,}",
+                            sticky=True
+                        )
+                    ).add_to(fmap)
 
                     heat_data.append([float(row['lat']), float(row['lon']),
                                       float(row['predicted_cases'])])
@@ -591,20 +674,27 @@ with tab4:
                     continue
 
             if show_heatmap and heat_data:
-                HeatMap(heat_data, radius=20, blur=15, min_opacity=0.3).add_to(m)
+                HeatMap(heat_data, radius=25, blur=18, min_opacity=0.4).add_to(fmap)
 
-        m.get_root().html.add_child(folium.Element("""
-        <div style="position:fixed;bottom:30px;left:30px;background:white;
-            border:1px solid #ccc;border-radius:8px;padding:10px 14px;
-            font-family:Arial;font-size:12px;z-index:9999;
-            box-shadow:2px 2px 6px rgba(0,0,0,0.2)">
-            <b>14-Day Risk</b><br>
-            <span style='color:#e74c3c'>&#9679;</span> High<br>
-            <span style='color:#f39c12'>&#9679;</span> Medium<br>
-            <span style='color:#27ae60'>&#9679;</span> Low
+        # Map legend overlay
+        fmap.get_root().html.add_child(folium.Element("""
+        <div style="position:fixed;bottom:30px;left:30px;
+            background:rgba(20,20,35,0.92);
+            border:1px solid #444;border-radius:10px;padding:12px 16px;
+            font-family:Arial;font-size:13px;z-index:9999;
+            box-shadow:2px 2px 10px rgba(0,0,0,0.5);min-width:160px">
+            <b style='color:#fff;font-size:14px'>14-Day Risk</b><br><br>
+            <span style='color:#e74c3c;font-size:20px'>&#9679;</span>
+                <span style='color:#eee'> High risk</span><br>
+            <span style='color:#f39c12;font-size:20px'>&#9679;</span>
+                <span style='color:#eee'> Medium risk</span><br>
+            <span style='color:#27ae60;font-size:20px'>&#9679;</span>
+                <span style='color:#eee'> Low risk</span><br>
+            <hr style='border-color:#444;margin:8px 0'>
+            <small style='color:#aaa'>Size = predicted cases<br>Click circle for details</small>
         </div>"""))
 
-        st_folium(m, width=None, height=500)
+        st_folium(fmap, width=None, height=540)
 
     st.markdown("---")
     st.subheader("Risk Choropleth Map")
@@ -612,14 +702,30 @@ with tab4:
         fig_ch = px.choropleth(
             risk_df, locations="country", locationmode="country names",
             color="risk",
-            color_discrete_map={'High':'red','Medium':'orange','Low':'green'},
+            color_discrete_map={'High':'#e74c3c','Medium':'#f39c12','Low':'#27ae60'},
             hover_data=[c for c in ['current_cases','predicted_cases',
                                      'vax_rate','death_rate']
                         if c in risk_df.columns],
             title="Global COVID-19 14-Day Risk Forecast")
-        fig_ch.update_layout(height=420, paper_bgcolor='rgba(0,0,0,0)',
-                             geo=dict(bgcolor='rgba(0,0,0,0)'))
+        fig_ch.update_layout(
+            height=450,
+            paper_bgcolor='rgba(0,0,0,0)',
+            geo=dict(
+                bgcolor='rgba(0,0,0,0)',
+                showframe=False,
+                showcoastlines=True,
+                coastlinecolor='rgba(255,255,255,0.2)',
+                showland=True,
+                landcolor='rgba(40,40,60,1)',
+                showocean=True,
+                oceancolor='rgba(20,20,40,1)',
+                showlakes=False,
+            ),
+            legend=dict(bgcolor='rgba(0,0,0,0)', font=dict(color='white'))
+        )
         st.plotly_chart(fig_ch, use_container_width=True)
+    else:
+        st.info("Risk map data not available. Run prediction.py first to generate global_risk_map_data.csv")
 
 # ======================================
 # TAB 5: DATA EXPLORER
