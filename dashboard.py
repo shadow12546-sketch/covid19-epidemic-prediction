@@ -36,6 +36,23 @@ st.set_page_config(
 # ======================================
 st.markdown("""
 <style>
+    /* ── Global white text override ── */
+    body, p, span, div, label, li, b, small,
+    h1, h2, h3, h4, h5, h6 {
+        color: #ffffff !important;
+    }
+
+    /* ── Markdown container text ── */
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span,
+    [data-testid="stMarkdownContainer"] li,
+    [data-testid="stMarkdownContainer"] b,
+    [data-testid="stMarkdownContainer"] small,
+    [data-testid="stMarkdownContainer"] div {
+        color: #ffffff !important;
+    }
+
+    /* ── Metric cards ── */
     div[data-testid="metric-container"] {
         background: rgba(255,255,255,0.08);
         border-radius: 10px;
@@ -54,11 +71,16 @@ st.markdown("""
     div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
         color: #aaaaaa !important;
     }
+
+    /* ── Tabs ── */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 6px 6px 0 0;
         padding: 8px 16px;
+        color: #ffffff !important;
     }
+
+    /* ── Map info box ── */
     .map-info-box {
         background: rgba(255,255,255,0.05);
         border-radius: 10px;
@@ -66,8 +88,32 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.1);
         margin-bottom: 10px;
     }
-    /* ── MODIFICATION 1: Force white text inside the Risk Map tab only ── */
-    /* Targets all text rendered inside the tab-4 content area */
+
+    /* ── Risk map section — all text white ── */
+    .risk-map-section * {
+        color: #ffffff !important;
+    }
+
+    /* ── Sidebar text ── */
+    [data-testid="stSidebar"] * {
+        color: #ffffff !important;
+    }
+
+    /* ── Dataframe / table text ── */
+    [data-testid="stDataFrame"] * {
+        color: #ffffff !important;
+    }
+
+    /* ── Select box, multiselect, slider labels ── */
+    [data-testid="stSelectbox"] label,
+    [data-testid="stMultiSelect"] label,
+    [data-testid="stSlider"] label,
+    [data-testid="stDateInput"] label,
+    [data-testid="stCheckbox"] label {
+        color: #ffffff !important;
+    }
+
+    /* ── General vertical block text ── */
     div[data-testid="stVerticalBlock"] p,
     div[data-testid="stVerticalBlock"] span,
     div[data-testid="stVerticalBlock"] li,
@@ -75,10 +121,6 @@ st.markdown("""
     div[data-testid="stVerticalBlock"] div,
     div[data-testid="stVerticalBlock"] b,
     div[data-testid="stVerticalBlock"] small {
-        color: #ffffff;
-    }
-    /* Scoped stronger override for risk map section */
-    .risk-map-section * {
         color: #ffffff !important;
     }
 </style>
@@ -103,11 +145,10 @@ def download_if_needed(filename):
     """Download file from Google Drive, handling large-file confirmation."""
     if not os.path.exists(filename):
         file_id = DRIVE_FILES[filename]
-        session = requests.Session()
+        session  = requests.Session()
         url      = f"https://drive.google.com/uc?id={file_id}&export=download"
         response = session.get(url, stream=True)
 
-        # Confirmation token for large files
         token = None
         for key, value in response.cookies.items():
             if key.startswith('download_warning'):
@@ -225,13 +266,6 @@ with st.spinner("Loading data (first run downloads from Google Drive)..."):
 countries = sorted(df['country'].unique().tolist())
 
 # ======================================
-# SESSION STATE — for tab switching
-# ======================================
-# MODIFICATION 3: Use session state to track active tab
-if 'active_tab' not in st.session_state:
-    st.session_state['active_tab'] = 0
-
-# ======================================
 # SIDEBAR
 # ======================================
 with st.sidebar:
@@ -293,11 +327,6 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("⚡ Actions")
 
-    # MODIFICATION 3 FIX: Button now sets session state to open tab index 3 (Risk Map)
-    if st.button("🗺️  Open Risk Map Tab", use_container_width=True):
-        st.session_state['active_tab'] = 3
-        st.rerun()
-
     if st.button("🔄  Refresh Data", use_container_width=True):
         for fname in DRIVE_FILES:
             if os.path.exists(fname):
@@ -313,20 +342,26 @@ with st.sidebar:
         rc = risk_df['risk'].value_counts()
         col_h, col_m, col_l = st.columns(3)
         with col_h:
-            st.markdown(f"<div style='text-align:center;background:#e74c3c22;border-radius:8px;padding:8px'>"
-                        f"<div style='font-size:20px'>🔴</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:#e74c3c'>{rc.get('High',0)}</div>"
-                        f"<div style='font-size:11px;color:#aaa'>High</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='text-align:center;background:#e74c3c22;border-radius:8px;padding:8px'>"
+                f"<div style='font-size:20px'>🔴</div>"
+                f"<div style='font-size:18px;font-weight:700;color:#e74c3c'>{rc.get('High',0)}</div>"
+                f"<div style='font-size:11px;color:#aaa'>High</div></div>",
+                unsafe_allow_html=True)
         with col_m:
-            st.markdown(f"<div style='text-align:center;background:#f39c1222;border-radius:8px;padding:8px'>"
-                        f"<div style='font-size:20px'>🟠</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:#f39c12'>{rc.get('Medium',0)}</div>"
-                        f"<div style='font-size:11px;color:#aaa'>Medium</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='text-align:center;background:#f39c1222;border-radius:8px;padding:8px'>"
+                f"<div style='font-size:20px'>🟠</div>"
+                f"<div style='font-size:18px;font-weight:700;color:#f39c12'>{rc.get('Medium',0)}</div>"
+                f"<div style='font-size:11px;color:#aaa'>Medium</div></div>",
+                unsafe_allow_html=True)
         with col_l:
-            st.markdown(f"<div style='text-align:center;background:#27ae6022;border-radius:8px;padding:8px'>"
-                        f"<div style='font-size:20px'>🟢</div>"
-                        f"<div style='font-size:18px;font-weight:700;color:#27ae60'>{rc.get('Low',0)}</div>"
-                        f"<div style='font-size:11px;color:#aaa'>Low</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='text-align:center;background:#27ae6022;border-radius:8px;padding:8px'>"
+                f"<div style='font-size:20px'>🟢</div>"
+                f"<div style='font-size:18px;font-weight:700;color:#27ae60'>{rc.get('Low',0)}</div>"
+                f"<div style='font-size:11px;color:#aaa'>Low</div></div>",
+                unsafe_allow_html=True)
         st.markdown("")
 
     st.caption("Data: OWID · JHU · WHO · 2020–2024")
@@ -349,7 +384,6 @@ st.markdown("---")
 
 # ======================================
 # TABS
-# MODIFICATION 3: Pass default_tab from session state
 # ======================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊  Overview",
@@ -358,26 +392,6 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🗺️  Risk Map",
     "📋  Data Explorer"
 ])
-
-# Inject JS to auto-click the Risk Map tab when session state requests it
-if st.session_state.get('active_tab') == 3:
-    st.markdown("""
-    <script>
-    (function() {
-        function clickRiskMapTab() {
-            const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
-            if (tabs.length >= 4) {
-                tabs[3].click();
-            } else {
-                setTimeout(clickRiskMapTab, 200);
-            }
-        }
-        setTimeout(clickRiskMapTab, 300);
-    })();
-    </script>
-    """, unsafe_allow_html=True)
-    # Reset so it doesn't keep re-clicking on every interaction
-    st.session_state['active_tab'] = 0
 
 # ======================================
 # TAB 1: OVERVIEW
@@ -415,7 +429,8 @@ with tab1:
                          color_discrete_sequence=px.colors.qualitative.Set3)
         fig_pie.update_layout(margin=dict(t=0,b=0,l=0,r=0), height=320,
                               paper_bgcolor='rgba(0,0,0,0)',
-                              plot_bgcolor='rgba(0,0,0,0)')
+                              plot_bgcolor='rgba(0,0,0,0)',
+                              font=dict(color='#ffffff'))
         st.plotly_chart(fig_pie, use_container_width=True)
 
     st.markdown("---")
@@ -427,8 +442,9 @@ with tab1:
         fig_ov.update_layout(hovermode='x unified', height=380,
                              paper_bgcolor='rgba(0,0,0,0)',
                              plot_bgcolor='rgba(0,0,0,0)',
-                             xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
-                             yaxis=dict(gridcolor='rgba(255,255,255,0.1)'))
+                             font=dict(color='#ffffff'),
+                             xaxis=dict(gridcolor='rgba(255,255,255,0.1)', color='#ffffff'),
+                             yaxis=dict(gridcolor='rgba(255,255,255,0.1)', color='#ffffff'))
         st.plotly_chart(fig_ov, use_container_width=True)
     else:
         st.warning("No data for selected filters.")
@@ -447,8 +463,9 @@ with tab2:
         fig.update_layout(height=320, hovermode='x unified',
                           paper_bgcolor='rgba(0,0,0,0)',
                           plot_bgcolor='rgba(0,0,0,0)',
-                          xaxis=dict(gridcolor='rgba(255,255,255,0.08)'),
-                          yaxis=dict(gridcolor='rgba(255,255,255,0.08)'),
+                          font=dict(color='#ffffff'),
+                          xaxis=dict(gridcolor='rgba(255,255,255,0.08)', color='#ffffff'),
+                          yaxis=dict(gridcolor='rgba(255,255,255,0.08)', color='#ffffff'),
                           title=title)
         return fig
 
@@ -485,7 +502,9 @@ with tab2:
         fig_dr.update_layout(height=320, showlegend=False,
                              paper_bgcolor='rgba(0,0,0,0)',
                              plot_bgcolor='rgba(0,0,0,0)',
-                             yaxis=dict(gridcolor='rgba(255,255,255,0.08)'))
+                             font=dict(color='#ffffff'),
+                             yaxis=dict(gridcolor='rgba(255,255,255,0.08)', color='#ffffff'),
+                             xaxis=dict(color='#ffffff'))
         st.plotly_chart(fig_dr, use_container_width=True)
 
 # ======================================
@@ -542,9 +561,10 @@ with tab3:
                     hovermode='x unified', height=420,
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis=dict(gridcolor='rgba(255,255,255,0.08)'),
-                    yaxis=dict(gridcolor='rgba(255,255,255,0.08)'),
-                    legend=dict(bgcolor='rgba(0,0,0,0)'))
+                    font=dict(color='#ffffff'),
+                    xaxis=dict(gridcolor='rgba(255,255,255,0.08)', color='#ffffff'),
+                    yaxis=dict(gridcolor='rgba(255,255,255,0.08)', color='#ffffff'),
+                    legend=dict(bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff')))
                 st.plotly_chart(fig_fc, use_container_width=True)
 
                 st.subheader("Predicted Values")
@@ -575,7 +595,9 @@ with tab3:
                             color='Risk Level',
                             color_discrete_map={'High':'#e74c3c',
                                                 'Medium':'#f39c12','Low':'#27ae60'})
-            fig_rp.update_layout(height=300, paper_bgcolor='rgba(0,0,0,0)')
+            fig_rp.update_layout(height=300,
+                                 paper_bgcolor='rgba(0,0,0,0)',
+                                 font=dict(color='#ffffff'))
             st.plotly_chart(fig_rp, use_container_width=True)
         with c2:
             st.dataframe(
@@ -587,10 +609,8 @@ with tab3:
 
 # ======================================
 # TAB 4: RISK MAP
-# MODIFICATIONS: 1) White font via inline styles  2) Risk Legend removed
 # ======================================
 with tab4:
-    # MODIFICATION 1: Wrap entire tab content in a div with white text
     st.markdown("<div class='risk-map-section'>", unsafe_allow_html=True)
 
     st.subheader("🗺️ Interactive Risk Map")
@@ -600,7 +620,6 @@ with tab4:
         unsafe_allow_html=True
     )
 
-    # Map tile selection
     tile_map = {
         "Dark (recommended)": "CartoDB dark_matter",
         "Light":              "CartoDB positron",
@@ -608,10 +627,6 @@ with tab4:
     }
     selected_tile = tile_map.get(map_tile, "CartoDB dark_matter")
 
-    # MODIFICATION 2: Removed c_info column (Risk Legend). Now map takes full width.
-    # Only show the map and the country count / top high risk info below it.
-
-    # Build folium map with dark tiles
     fmap = folium.Map(
         location=[20, 0],
         zoom_start=2,
@@ -664,7 +679,6 @@ with tab4:
                     <b>Risk: <span style='color:{color};font-size:14px'>{risk}</span></b>
                 </div>"""
 
-                # Bigger, more visible circles
                 radius = max(row['predicted_cases'] / max_cases * 40, 8)
 
                 folium.CircleMarker(
@@ -692,7 +706,7 @@ with tab4:
         if show_heatmap and heat_data:
             HeatMap(heat_data, radius=25, blur=18, min_opacity=0.4).add_to(fmap)
 
-    # Map legend overlay (inside the folium map itself — unchanged)
+    # Map legend overlay inside folium
     fmap.get_root().html.add_child(folium.Element("""
     <div style="position:fixed;bottom:30px;left:30px;
         background:rgba(20,20,35,0.92);
@@ -710,10 +724,9 @@ with tab4:
         <small style='color:#aaa'>Size = predicted cases<br>Click circle for details</small>
     </div>"""))
 
-    # Map now renders full-width (no side column)
     st_folium(fmap, width=None, height=540)
 
-    # Country count summary below the map (replaces the removed right-panel info)
+    # Country risk count summary
     if not risk_df.empty and 'risk' in risk_df.columns:
         rc = risk_df['risk'].value_counts()
         st.markdown("---")
@@ -759,6 +772,7 @@ with tab4:
         fig_ch.update_layout(
             height=450,
             paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#ffffff'),
             geo=dict(
                 bgcolor='rgba(0,0,0,0)',
                 showframe=False,
@@ -770,13 +784,13 @@ with tab4:
                 oceancolor='rgba(20,20,40,1)',
                 showlakes=False,
             ),
-            legend=dict(bgcolor='rgba(0,0,0,0)', font=dict(color='white'))
+            legend=dict(bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
         )
         st.plotly_chart(fig_ch, use_container_width=True)
     else:
         st.info("Risk map data not available. Run prediction.py first to generate global_risk_map_data.csv")
 
-    st.markdown("</div>", unsafe_allow_html=True)  # close risk-map-section
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ======================================
 # TAB 5: DATA EXPLORER
@@ -810,10 +824,12 @@ with tab5:
             fig_ex = px.line(country_exp, x='date', y=metric_choice,
                              title=f"{metric_choice.replace('_',' ').title()} — {explore_country}",
                              color_discrete_sequence=['#e74c3c'])
-            fig_ex.update_layout(height=350, paper_bgcolor='rgba(0,0,0,0)',
+            fig_ex.update_layout(height=350,
+                                 paper_bgcolor='rgba(0,0,0,0)',
                                  plot_bgcolor='rgba(0,0,0,0)',
-                                 xaxis=dict(gridcolor='rgba(255,255,255,0.08)'),
-                                 yaxis=dict(gridcolor='rgba(255,255,255,0.08)'))
+                                 font=dict(color='#ffffff'),
+                                 xaxis=dict(gridcolor='rgba(255,255,255,0.08)', color='#ffffff'),
+                                 yaxis=dict(gridcolor='rgba(255,255,255,0.08)', color='#ffffff'))
             st.plotly_chart(fig_ex, use_container_width=True)
 
         with cr:
