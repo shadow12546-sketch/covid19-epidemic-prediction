@@ -36,13 +36,10 @@ st.set_page_config(
 # ======================================
 st.markdown("""
 <style>
-    /* ── Global white text override ── */
     body, p, span, div, label, li, b, small,
     h1, h2, h3, h4, h5, h6 {
         color: #ffffff !important;
     }
-
-    /* ── Markdown container text ── */
     [data-testid="stMarkdownContainer"] p,
     [data-testid="stMarkdownContainer"] span,
     [data-testid="stMarkdownContainer"] li,
@@ -51,8 +48,6 @@ st.markdown("""
     [data-testid="stMarkdownContainer"] div {
         color: #ffffff !important;
     }
-
-    /* ── Metric cards ── */
     div[data-testid="metric-container"] {
         background: rgba(255,255,255,0.08);
         border-radius: 10px;
@@ -71,16 +66,12 @@ st.markdown("""
     div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
         color: #aaaaaa !important;
     }
-
-    /* ── Tabs ── */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 6px 6px 0 0;
         padding: 8px 16px;
         color: #ffffff !important;
     }
-
-    /* ── Map info box ── */
     .map-info-box {
         background: rgba(255,255,255,0.05);
         border-radius: 10px;
@@ -88,66 +79,15 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.1);
         margin-bottom: 10px;
     }
-
-    /* ── Risk map section — all text white ── */
     .risk-map-section * {
         color: #ffffff !important;
     }
-
-    /* ── Risk legend panel (right sidebar of map) ── */
-    .risk-legend-panel {
-        background: #1a1a2e;
-        border-radius: 12px;
-        padding: 20px 16px;
-        border: 1px solid rgba(255,255,255,0.12);
-        margin-bottom: 16px;
-    }
-    .risk-legend-panel h4 {
-        color: #ffffff !important;
-        font-size: 15px !important;
-        font-weight: 700 !important;
-        margin-bottom: 12px !important;
-    }
-    .risk-legend-panel .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 8px;
-        font-size: 14px;
-        color: #ffffff !important;
-    }
-    .risk-legend-panel .dot {
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        display: inline-block;
-        flex-shrink: 0;
-    }
-    .risk-legend-panel .count-badge {
-        font-weight: 700;
-        font-size: 15px;
-    }
-    .risk-legend-panel .divider {
-        border: none;
-        border-top: 1px solid rgba(255,255,255,0.1);
-        margin: 14px 0;
-    }
-    .risk-legend-panel .note {
-        color: #aaaaaa !important;
-        font-size: 12px !important;
-    }
-
-    /* ── Sidebar text ── */
     [data-testid="stSidebar"] * {
         color: #ffffff !important;
     }
-
-    /* ── Dataframe / table text ── */
     [data-testid="stDataFrame"] * {
         color: #ffffff !important;
     }
-
-    /* ── Select box, multiselect, slider labels ── */
     [data-testid="stSelectbox"] label,
     [data-testid="stMultiSelect"] label,
     [data-testid="stSlider"] label,
@@ -155,8 +95,6 @@ st.markdown("""
     [data-testid="stCheckbox"] label {
         color: #ffffff !important;
     }
-
-    /* ── General vertical block text ── */
     div[data-testid="stVerticalBlock"] p,
     div[data-testid="stVerticalBlock"] span,
     div[data-testid="stVerticalBlock"] li,
@@ -185,7 +123,6 @@ DRIVE_FILES = {
 }
 
 def download_if_needed(filename):
-    """Download file from Google Drive, handling large-file confirmation."""
     if not os.path.exists(filename):
         file_id = DRIVE_FILES[filename]
         session  = requests.Session()
@@ -379,7 +316,6 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Risk summary in sidebar
     if not risk_df.empty and 'risk' in risk_df.columns:
         st.subheader("🌍 Risk Summary")
         rc = risk_df['risk'].value_counts()
@@ -651,7 +587,7 @@ with tab3:
                 use_container_width=True, hide_index=True)
 
 # ======================================
-# TAB 4: RISK MAP  (WHITE / LIGHT THEME)
+# TAB 4: RISK MAP
 # ======================================
 with tab4:
     st.markdown("<div class='risk-map-section'>", unsafe_allow_html=True)
@@ -662,7 +598,6 @@ with tab4:
         unsafe_allow_html=True
     )
 
-    # ── Tile mapping (default now Light) ──────────────────
     tile_map = {
         "Light (recommended)": "CartoDB positron",
         "Dark":                "CartoDB dark_matter",
@@ -672,7 +607,6 @@ with tab4:
 
     CMAP = {'High': '#e74c3c', 'Medium': '#f39c12', 'Low': '#27ae60'}
 
-    # ── Pre-compute risk counts for the legend panel ───────
     rc_counts = {}
     top_high_countries = []
     plot_df_global = pd.DataFrame()
@@ -694,7 +628,6 @@ with tab4:
             if 'predicted_cases' in risk_df.columns else []
         )
 
-    # ── Layout: map (left, wide) + legend panel (right, narrow) ──
     map_col, legend_col = st.columns([3, 1])
 
     with map_col:
@@ -722,7 +655,6 @@ with tab4:
                     pos   = f"{row['positivity_rate']:.2f}" if 'positivity_rate' in row and pd.notna(row.get('positivity_rate')) else "N/A"
                     dr    = f"{row['death_rate']:.3f}%"     if 'death_rate'      in row and pd.notna(row.get('death_rate'))      else "N/A"
 
-                    # Popup styled for light map background
                     popup_html = f"""
                     <div style='font-family:Arial;font-size:12px;min-width:210px;
                                 background:#ffffff;color:#222;border-radius:8px;
@@ -773,7 +705,7 @@ with tab4:
 
         st_folium(fmap, width=None, height=520)
 
-    # ── Right-side legend panel ────────────────────────────
+    # ── RIGHT LEGEND PANEL — ALL STYLES INLINED (no CSS classes) ──
     with legend_col:
         high_n   = rc_counts.get('High',   0)
         medium_n = rc_counts.get('Medium', 0)
@@ -781,51 +713,90 @@ with tab4:
 
         # Risk Summary block
         st.markdown(f"""
-        <div class='risk-legend-panel'>
-            <h4>Risk Summary</h4>
-            <div class='legend-item'>
-                <span class='dot' style='background:#e74c3c'></span>
-                <span>High: <span class='count-badge' style='color:#e74c3c'>{high_n}</span> countries</span>
-            </div>
-            <div class='legend-item'>
-                <span class='dot' style='background:#27ae60'></span>
-                <span>Low: <span class='count-badge' style='color:#27ae60'>{low_n}</span> countries</span>
-            </div>
-            <div class='legend-item'>
-                <span class='dot' style='background:#f39c12'></span>
-                <span>Medium: <span class='count-badge' style='color:#f39c12'>{medium_n}</span> countries</span>
+        <div style="background:#1a1a2e;border-radius:12px;padding:20px 16px;
+                    border:1px solid rgba(255,255,255,0.12);margin-bottom:16px;">
+
+            <h4 style="color:#ffffff;font-size:15px;font-weight:700;margin:0 0 12px 0;">
+                Risk Summary
+            </h4>
+
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
+                        font-size:14px;color:#ffffff;">
+                <span style="width:14px;height:14px;border-radius:50%;background:#e74c3c;
+                             display:inline-block;flex-shrink:0;"></span>
+                <span style="color:#ffffff;">High:&nbsp;
+                    <span style="font-weight:700;font-size:15px;color:#e74c3c;">{high_n}</span>
+                    &nbsp;countries
+                </span>
             </div>
 
-            <hr class='divider'>
-
-            <h4>Legend</h4>
-            <div class='legend-item'>
-                <span class='dot' style='background:#e74c3c'></span>
-                <span>High risk</span>
-            </div>
-            <div class='legend-item'>
-                <span class='dot' style='background:#f39c12'></span>
-                <span>Medium risk</span>
-            </div>
-            <div class='legend-item'>
-                <span class='dot' style='background:#27ae60'></span>
-                <span>Low risk</span>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
+                        font-size:14px;color:#ffffff;">
+                <span style="width:14px;height:14px;border-radius:50%;background:#27ae60;
+                             display:inline-block;flex-shrink:0;"></span>
+                <span style="color:#ffffff;">Low:&nbsp;
+                    <span style="font-weight:700;font-size:15px;color:#27ae60;">{low_n}</span>
+                    &nbsp;countries
+                </span>
             </div>
 
-            <hr class='divider'>
-            <span class='note'>Circle size = predicted cases<br>Click circle for details</span>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
+                        font-size:14px;color:#ffffff;">
+                <span style="width:14px;height:14px;border-radius:50%;background:#f39c12;
+                             display:inline-block;flex-shrink:0;"></span>
+                <span style="color:#ffffff;">Medium:&nbsp;
+                    <span style="font-weight:700;font-size:15px;color:#f39c12;">{medium_n}</span>
+                    &nbsp;countries
+                </span>
+            </div>
+
+            <hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:14px 0;">
+
+            <h4 style="color:#ffffff;font-size:15px;font-weight:700;margin:0 0 12px 0;">
+                Legend
+            </h4>
+
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
+                        font-size:14px;color:#ffffff;">
+                <span style="width:14px;height:14px;border-radius:50%;background:#e74c3c;
+                             display:inline-block;flex-shrink:0;"></span>
+                <span style="color:#ffffff;">High risk</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
+                        font-size:14px;color:#ffffff;">
+                <span style="width:14px;height:14px;border-radius:50%;background:#f39c12;
+                             display:inline-block;flex-shrink:0;"></span>
+                <span style="color:#ffffff;">Medium risk</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
+                        font-size:14px;color:#ffffff;">
+                <span style="width:14px;height:14px;border-radius:50%;background:#27ae60;
+                             display:inline-block;flex-shrink:0;"></span>
+                <span style="color:#ffffff;">Low risk</span>
+            </div>
+
+            <hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:14px 0;">
+
+            <span style="color:#aaaaaa;font-size:12px;">
+                Circle size = predicted cases<br>Click circle for details
+            </span>
         </div>
         """, unsafe_allow_html=True)
 
         # Top High Risk Countries block
         if top_high_countries:
             items_html = "".join(
-                f"<div style='color:#e74c3c;margin:4px 0;font-size:13px'>● {c}</div>"
+                f"<div style='color:#e74c3c;margin:4px 0;font-size:13px;'>&#9679; {c}</div>"
                 for c in top_high_countries
             )
             st.markdown(f"""
-            <div class='risk-legend-panel' style='margin-top:0'>
-                <h4>🔴 Top High Risk</h4>
+            <div style="background:#1a1a2e;border-radius:12px;padding:20px 16px;
+                        border:1px solid rgba(255,255,255,0.12);margin-top:0;">
+                <h4 style="color:#ffffff;font-size:15px;font-weight:700;margin:0 0 12px 0;">
+                    🔴 Top High Risk
+                </h4>
                 {items_html}
             </div>
             """, unsafe_allow_html=True)
