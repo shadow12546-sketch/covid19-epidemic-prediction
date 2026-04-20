@@ -628,8 +628,7 @@ with tab4:
             if 'predicted_cases' in risk_df.columns else []
         )
 
-    map_col = st.container()
-    legend_col = st.container()
+    map_col, legend_col = st.columns([3, 1])
 
     with map_col:
         fmap = folium.Map(
@@ -712,79 +711,19 @@ with tab4:
         medium_n = rc_counts.get('Medium', 0)
         low_n    = rc_counts.get('Low',    0)
 
-        # Risk Summary block
-        st.markdown(f"""
-        <div style="background:#1a1a2e;border-radius:12px;padding:20px 16px;
-                    border:1px solid rgba(255,255,255,0.12);margin-bottom:16px;">
+        st.markdown("### Risk Summary")
+        st.error(f"🔴 High: **{high_n}** countries")
+        st.success(f"🟢 Low: **{low_n}** countries")
+        st.warning(f"🟠 Medium: **{medium_n}** countries")
 
-            <h4 style="color:#ffffff;font-size:15px;font-weight:700;margin:0 0 12px 0;">
-                Risk Summary
-            </h4>
+        st.markdown("---")
+        st.markdown("### Legend")
+        st.error("🔴 High risk")
+        st.warning("🟠 Medium risk")
+        st.success("🟢 Low risk")
 
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
-                        font-size:14px;color:#ffffff;">
-                <span style="width:14px;height:14px;border-radius:50%;background:#e74c3c;
-                             display:inline-block;flex-shrink:0;"></span>
-                <span style="color:#ffffff;">High:&nbsp;
-                    <span style="font-weight:700;font-size:15px;color:#e74c3c;">{high_n}</span>
-                    &nbsp;countries
-                </span>
-            </div>
-
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
-                        font-size:14px;color:#ffffff;">
-                <span style="width:14px;height:14px;border-radius:50%;background:#27ae60;
-                             display:inline-block;flex-shrink:0;"></span>
-                <span style="color:#ffffff;">Low:&nbsp;
-                    <span style="font-weight:700;font-size:15px;color:#27ae60;">{low_n}</span>
-                    &nbsp;countries
-                </span>
-            </div>
-
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
-                        font-size:14px;color:#ffffff;">
-                <span style="width:14px;height:14px;border-radius:50%;background:#f39c12;
-                             display:inline-block;flex-shrink:0;"></span>
-                <span style="color:#ffffff;">Medium:&nbsp;
-                    <span style="font-weight:700;font-size:15px;color:#f39c12;">{medium_n}</span>
-                    &nbsp;countries
-                </span>
-            </div>
-
-            <hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:14px 0;">
-
-            <h4 style="color:#ffffff;font-size:15px;font-weight:700;margin:0 0 12px 0;">
-                Legend
-            </h4>
-
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
-                        font-size:14px;color:#ffffff;">
-                <span style="width:14px;height:14px;border-radius:50%;background:#e74c3c;
-                             display:inline-block;flex-shrink:0;"></span>
-                <span style="color:#ffffff;">High risk</span>
-            </div>
-
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
-                        font-size:14px;color:#ffffff;">
-                <span style="width:14px;height:14px;border-radius:50%;background:#f39c12;
-                             display:inline-block;flex-shrink:0;"></span>
-                <span style="color:#ffffff;">Medium risk</span>
-            </div>
-
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;
-                        font-size:14px;color:#ffffff;">
-                <span style="width:14px;height:14px;border-radius:50%;background:#27ae60;
-                             display:inline-block;flex-shrink:0;"></span>
-                <span style="color:#ffffff;">Low risk</span>
-            </div>
-
-            <hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:14px 0;">
-
-            <span style="color:#aaaaaa;font-size:12px;">
-                Circle size = predicted cases<br>Click circle for details
-            </span>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("---")
+        st.caption("Circle size = predicted cases\nClick circle for details")
 
         # Top High Risk Countries block
         if top_high_countries:
