@@ -628,7 +628,8 @@ with tab4:
             if 'predicted_cases' in risk_df.columns else []
         )
 
-    map_col, legend_col = st.columns([3, 1])
+    map_col = st.container()
+    legend_col = st.container()
 
     with map_col:
         fmap = folium.Map(
@@ -703,7 +704,7 @@ with tab4:
             if show_heatmap and heat_data:
                 HeatMap(heat_data, radius=25, blur=18, min_opacity=0.4).add_to(fmap)
 
-        st_folium(fmap, width=700, height=520)
+        st_folium(fmap, width=None, height=520)
 
     # ── RIGHT LEGEND PANEL — ALL STYLES INLINED (no CSS classes) ──
     with legend_col:
